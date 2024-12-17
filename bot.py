@@ -4,11 +4,15 @@ from discord.ext import commands
 import json
 import os
 import asyncio
+from dotenv import load_dotenv
+
+load_dotenv()
+bot_token = os.getenv("BOT_TOKEN")
 
 intents = discord.Intents.default()
 intents.message_content = True
 
-bot = commands.Bot(command_prefix="!", intents=intents)
+bot = commands.Bot(command_prefix=["sisyphus ", "Sisyphus ", "Sis ", "sis "], intents=intents)
 
 GAME_DATA_FILE = "game_data.json"
 
@@ -96,7 +100,20 @@ async def on_message(message):
                     config["servers"][guild_id]["expected_number"] = 1
                     config["servers"][guild_id]["last_user_name"] = None
                 else:
-                    await message.add_reaction("✅")
+                    username = message.author.name
+                    if "scores" not in guild_config:
+                        guild_config["scores"] = {}
+
+                    if username not in guild_config["scores"]:
+                        guild_config["scores"][username] = 0
+                        
+                    guild_config["scores"][username] += 1
+                    
+                    if number == 100:
+                        await message.add_reaction("💯")
+                    else:
+                        await message.add_reaction("✅")
+                        
                     config["servers"][guild_id]["expected_number"] += 1
                     config["servers"][guild_id]["last_user_name"] = message.author.name
             else:
@@ -129,6 +146,43 @@ async def set_channel(ctx):
 
     await ctx.send(f"Counting game channel has been set to {ctx.channel.mention}.")
     
+@bot.command(name="leaderboard", aliases=["leader", "l"])
+async def leaderboard(ctx):
+    guild_id = str(ctx.guild.id)
+
+    if guild_id not in config["servers"] or "scores" not in config["servers"][guild_id]:
+        await ctx.reply("Nobody's even started counting yet, wym?")
+        return
+
+    scores = config["servers"][guild_id]["scores"]
+
+    sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:10]
+
+    embed = discord.Embed(
+        title="🏆 Leaderboard 🏆",
+        description="Top 10 players ranked by score:",
+        color=discord.Color.gold()
+    )
+
+    for rank, (username, score) in enumerate(sorted_scores, start=1):
+        embed.add_field(
+            name=f"**#{rank}** {username}",
+            value=f"**Score:** {score}",
+            inline=False 
+        )
+
+    await ctx.reply(embed=embed)
+    
+@bot.command(name="next", aliases=["number", "num", "n"])
+async def next(ctx): 
+    guild_id = str(ctx.guild.id)  
+    
+    if guild_id not in config["servers"]:
+        await ctx.reply("This server is not set up for counting yet.")
+        return
+    
+    await ctx.reply(f"The next number is **{config["servers"][guild_id]["expected_number"]}**.")
+    
 bot.run(
-    "[token redacted]"
+   bot_token
 )
