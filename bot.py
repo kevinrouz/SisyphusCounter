@@ -95,6 +95,8 @@ async def on_message(message):
     async with state_lock:
         expected_number = guild_config.get("expected_number", 1)
         last_user_name = guild_config.get("last_user_name", None)
+        record_number = guild_config.get("record_number", 1)
+        record_holder = guild_config.get("record_holder", None)
 
         try:
             parts = message.content.split(' ', 1)
@@ -127,9 +129,14 @@ async def on_message(message):
                             await message.add_reaction("💯")
                         else:
                             await message.add_reaction("✅")
+                            
+                        if number > record_number:
+                            guild_config["record_number"] = number
+                            guild_config["record_holder"] = message.author.name
 
                         config["servers"][guild_id]["expected_number"] += 1
                         config["servers"][guild_id]["last_user_name"] = message.author.name
+                        
                 else:
                     await message.reply(
                         f"{message.author.mention} {get_random_string(fail_messages)} You ruined it at **{expected_number}**. **Now you have to restart from 1.**"
@@ -214,13 +221,18 @@ async def help_command(ctx):
         inline=False
     )
     embed.add_field(
-        name="next (aliases: sisyphus number, sisyphus num, sisyphus n)",
+        name="next (aliases: sis number, sis num, sis n)",
         value="Shows the next number in the game.\n**Example usage:** `sis next`",
         inline=False
     )
     embed.add_field(
         name="commands",
         value="Displays this help message.\n**Example usage:** `sis commands`",
+        inline=False
+    )
+    embed.add_field(
+        name="record (alias: sis r)",
+        value="Displays the current high score.\n**Example usage:** `sis r`",
         inline=False
     )
 
@@ -231,6 +243,19 @@ async def help_command(ctx):
     )
 
     await ctx.reply(embed=embed)
+    
+@bot.command(name="record", aliases=["r"])
+async def record(ctx):
+    guild_id = str(ctx.guild.id)
+
+    if guild_id not in config["servers"]:
+        await ctx.reply("This server is not set up for counting yet.")
+        return
+
+    record_number = config["servers"][guild_id].get("record_number", 1)
+    record_holder = config["servers"][guild_id].get("record_holder", "No one yet")
+    
+    await ctx.reply(f"The current record number is **{record_number}** set by **{record_holder}**.")
 
 
 bot.run(
