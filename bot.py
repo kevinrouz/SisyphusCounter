@@ -257,6 +257,22 @@ async def record(ctx):
     
     await ctx.reply(f"The current record number is **{record_number}** set by **{record_holder}**.")
 
+@bot.command(name="setnum")
+async def setnum(ctx, new_number: int):
+    if str(ctx.author.id) != "516674441053470759":
+        await ctx.reply("Lol sike u thought :nerd:")
+        return
+
+    guild_id = str(ctx.guild.id)
+
+    if guild_id not in config["servers"]:
+        await ctx.reply("This server is not set up for counting yet.")
+        return
+
+    config["servers"][guild_id]["expected_number"] = new_number
+    save_game_data()
+
+    await ctx.reply(f"As you wish, my glorious king. I have set the number to **{new_number}**.")
 
 bot.run(
    bot_token
