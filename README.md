@@ -1,4 +1,4 @@
-# Sisyphys Counter
+# Sisyphus Counter
 
 ## Description
 
@@ -10,8 +10,10 @@ This is a simple Discord bot designed to run a counting game in your server. Thi
 - If a user types the correct number, they get a ✅ reaction, and the count continues.
 - If a user types an incorrect number, they get a ❌ reaction, and the count restarts from 1.
 - If a user tries to type the same number twice in a row, they get a special punishment message and the count restarts.
+- Users can include arithmetic in their numbers, for example `2+5-2*1` instead of `5`
+- Users can view the leaderboard of the top 10 counters, the record count score, and the next number
 - Customizable failure messages that get sent when users make mistakes.
-- Admins can set the channel for the game using the `!set_channel` command.
+- Admins can set the channel for the game using the `sis set_channel` command.
 
 ## How It Works
 
@@ -19,4 +21,4 @@ This is a simple Discord bot designed to run a counting game in your server. Thi
 2. Users need to type the expected number in the sequence.
 3. If a user types the correct number, the bot increments the expected number.
 4. If a user types the wrong number or repeats their turn, the bot sends a failure message, resets the count to 1, and starts over.
-5. Admins can change the game channel by using the `!set_channel` command in any channel.
+5. Admins can change the game channel by using the `sis set_channel` command in any channel.
