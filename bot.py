@@ -1,12 +1,19 @@
 import discord
+import sys
 import random
 from discord.ext import commands
 import json
 import os
 import asyncio
-from dotenv import load_dotenv
+import subprocess 
 
-load_dotenv()
+try:
+    import dotenv
+except ImportError:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "python-dotenv"])
+    import dotenv 
+
+dotenv.load_dotenv()
 bot_token = os.getenv("BOT_TOKEN")
 
 intents = discord.Intents.default()
@@ -183,6 +190,41 @@ async def next(ctx):
     
     await ctx.reply(f"The next number is **{config["servers"][guild_id]["expected_number"]}**.")
     
+@bot.command(name="commands")
+async def help_command(ctx):
+    user = "<@516674441053470759>"
+    
+    embed = discord.Embed(
+        title="Help - Sisyphus Counter",
+        description="Here are the available commands:",
+        color=discord.Color.blue()
+    )
+
+    embed.add_field(
+        name="leaderboard (aliases: sis leader, sis l)",
+        value="Displays the leaderboard of top 10 players by score.\n**Example usage:** `sis leaderboard`",
+        inline=False
+    )
+    embed.add_field(
+        name="next (aliases: sisyphus number, sisyphus num, sisyphus n)",
+        value="Shows the next number in the game.\n**Example usage:** `sis next`",
+        inline=False
+    )
+    embed.add_field(
+        name="commands",
+        value="Displays this help message.\n**Example usage:** `sis commands`",
+        inline=False
+    )
+
+    embed.add_field(
+        name="Created by Kevin Farokhrouz :bat:",
+        value=f"Feel free to reach out ({user}) if you have any questions!",
+        inline=False
+    )
+
+    await ctx.reply(embed=embed)
+
+
 bot.run(
    bot_token
 )
