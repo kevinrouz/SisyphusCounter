@@ -97,44 +97,52 @@ async def on_message(message):
         last_user_name = guild_config.get("last_user_name", None)
 
         try:
-            number = int(message.content)
-            if number == expected_number:
-                if message.author.name == last_user_name:
+            parts = message.content.split(' ', 1)
+            
+            if any(char.isalpha() for char in parts[0]):
+                return
+            
+            number = eval(parts[0])
+
+            if isinstance(number, (int, float)):
+                if number == expected_number:
+                    if message.author.name == last_user_name:
+                        await message.reply(
+                            f"{message.author.mention} {get_random_string(fail_messages)} **You can't count twice in a row. Now you have to restart from 1.**"
+                        )
+                        await message.add_reaction("❌")
+                        config["servers"][guild_id]["expected_number"] = 1
+                        config["servers"][guild_id]["last_user_name"] = None
+                    else:
+                        username = message.author.name
+                        if "scores" not in guild_config:
+                            guild_config["scores"] = {}
+
+                        if username not in guild_config["scores"]:
+                            guild_config["scores"][username] = 0
+
+                        guild_config["scores"][username] += 1
+
+                        if number == 100:
+                            await message.add_reaction("💯")
+                        else:
+                            await message.add_reaction("✅")
+
+                        config["servers"][guild_id]["expected_number"] += 1
+                        config["servers"][guild_id]["last_user_name"] = message.author.name
+                else:
                     await message.reply(
-                        f"{message.author.mention} {get_random_string(fail_messages)} **You can't count twice in a row. Now you have to restart from 1.**"
+                        f"{message.author.mention} {get_random_string(fail_messages)} You ruined it at **{expected_number}**. **Now you have to restart from 1.**"
                     )
                     await message.add_reaction("❌")
                     config["servers"][guild_id]["expected_number"] = 1
                     config["servers"][guild_id]["last_user_name"] = None
-                else:
-                    username = message.author.name
-                    if "scores" not in guild_config:
-                        guild_config["scores"] = {}
 
-                    if username not in guild_config["scores"]:
-                        guild_config["scores"][username] = 0
-                        
-                    guild_config["scores"][username] += 1
-                    
-                    if number == 100:
-                        await message.add_reaction("💯")
-                    else:
-                        await message.add_reaction("✅")
-                        
-                    config["servers"][guild_id]["expected_number"] += 1
-                    config["servers"][guild_id]["last_user_name"] = message.author.name
-            else:
-                await message.reply(
-                    f"{message.author.mention} {get_random_string(fail_messages)} You ruined it at **{expected_number}**. **Now you have to restart from 1.**"
-                )
-                await message.add_reaction("❌")
-                config["servers"][guild_id]["expected_number"] = 1
-                config["servers"][guild_id]["last_user_name"] = None
+                save_game_data()
 
-            save_game_data()
-
-        except ValueError:
+        except (ValueError, SyntaxError):
             pass
+
 
 @bot.command(name="set_channel")
 async def set_channel(ctx):
