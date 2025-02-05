@@ -182,12 +182,17 @@ async def on_message(message):
         expected_number = guild_config.get("expected_number", 1)
         last_user_name = guild_config.get("last_user_name", None)
         record_number = guild_config.get("record_number", 1)
-        record_holder = guild_config.get("record_holder", None)
 
         try:
             parts = message.content.split(' ', 1)
+            expression = parts[0]
+            expression = expression.lstrip('0')
+            
+            if not expression:
+                number = 0
+            else:
+                number = safe_numexpr_eval(expression)
 
-            number = safe_numexpr_eval(parts[0])
 
             if isinstance(number, (int, float)):
                 if number == expected_number:
