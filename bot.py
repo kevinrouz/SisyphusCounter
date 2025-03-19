@@ -100,8 +100,11 @@ def safe_numexpr_eval(expression, timeout=1):
     with strict input sanitization (no parentheses or decimals) and a timeout
     to prevent denial-of-service.
     """
+    # Replace every ^ with **
+    expression = expression.replace("^", "**")
+    
     # Sanitize input using a regular expression to allow only digits,
-    # basic arithmetic operators (+, -, *, /), and spaces
+    # basic arithmetic operators (+, -, *, /, **), and spaces
     if not re.match(r"^[\d+\-*/\s]+$", expression):
         return None
 
