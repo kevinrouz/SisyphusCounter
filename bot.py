@@ -78,10 +78,15 @@ def load_game_data():
             with open(GAME_DATA_FILE, "r") as f:
                 config = json.load(f)
         except json.JSONDecodeError:
-            print(f"Error: Could not decode JSON from {GAME_DATA_FILE}.  Using default configuration.")
+            print(f"Error: Could not decode JSON from {GAME_DATA_FILE}. Using default configuration.")
             config = {"servers": {}}
     else:
         config = {"servers": {}}
+
+    # Ensure each server has a banned_users list
+    for guild_id in config["servers"]:
+        config["servers"][guild_id].setdefault("banned_users", [])
+
 
 def save_game_data():
     with open(GAME_DATA_FILE, "w") as f:
@@ -198,7 +203,12 @@ async def on_message(message):
 
 
             if isinstance(number, (int, float)):
-                if number == expected_number:
+                # Check if user is banned
+                banned_users = guild_config.get("banned_users", [])
+                if str(message.author.id) in banned_users:
+                    await message.add_reaction("😹")
+                    return  # Ignore further processing for this message
+                elif number == expected_number:
                     if message.author.name == last_user_name:
                         await message.reply(
                             f"{message.author.mention} {get_random_string(fail_messages)} **You can't count twice in a row. Now you have to restart from 1.**"
@@ -357,6 +367,16 @@ async def help_command(ctx):
         embed.add_field(
             name="removeadmin",
             value="Removes admin privileges from a user.\n**Example usage:** `sis removeadmin user_id`",
+            inline=False
+        )
+        embed.add_field(
+            name="ban",
+            value="Removes counting privileges from a user.\n**Example usage:** `sis ban @username`",
+            inline=False
+        )
+        embed.add_field(
+            name="unban",
+            value="Restores counting privileges to a user.\n**Example usage:** `sis unban @username`",
             inline=False
         )
 
@@ -527,6 +547,50 @@ async def removeoperator(ctx, remove_operator_id: int = None):
         user_name = f"User {remove_operator_id}"
 
     await ctx.reply(f"As you wish, *{user_name}* is gone :nerd: :point_up:")
+    
+@bot.command(name="ban")
+async def ban(ctx, member: discord.Member = None):
+    if not is_admin(ctx) and not is_operator(ctx):
+        await ctx.reply("Bro who are you? :sob:")
+        return
+
+    if member is None:
+        await ctx.reply("...are you gonna tell me who? `sis ban @username`")
+        return
+
+    guild_id = str(ctx.guild.id)
+    config["servers"].setdefault(guild_id, {})
+    banned_users = config["servers"][guild_id].setdefault("banned_users", [])
+
+    if str(member.id) in banned_users:
+        await ctx.reply(f"Lock in bruh ... {member.mention} is already banned. :man_facepalming:")
+        return
+
+    banned_users.append(str(member.id))
+    save_game_data()
+    await ctx.reply(f"No more counting for {member.mention}... #L #Bozo #Ratio :no_entry_sign:")
+    
+@bot.command(name="unban")
+async def unban(ctx, member: discord.Member = None):
+    if not is_admin(ctx) and not is_operator(ctx):
+        await ctx.reply("Bro who are you? :sob:")
+        return
+
+    if member is None:
+        await ctx.reply("...are you gonna tell me who? `sis unban @username`")
+        return
+
+    guild_id = str(ctx.guild.id)
+    config["servers"].setdefault(guild_id, {})
+    banned_users = config["servers"][guild_id].setdefault("banned_users", [])
+
+    if str(member.id) not in banned_users:
+        await ctx.reply(f"Nah. {member.mention} ain't even banned bozo.")
+        return
+
+    banned_users.remove(str(member.id))
+    save_game_data()
+    await ctx.reply(f"Alright I'll let {member.mention} count... DON'T test my patience though... :white_check_mark:")
 
 
 # ============================================================================
