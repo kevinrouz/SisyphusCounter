@@ -1,16 +1,17 @@
 import discord
 import random
 from discord.ext import commands
-import json
 import os
 import asyncio
 import dotenv
 import numexpr
 import re
 import signal
+from motor.motor_asyncio import AsyncIOMotorClient
 
 dotenv.load_dotenv()
 bot_token = os.getenv("BOT_TOKEN")
+mongo_uri = os.getenv("MONGO_URI")
 
 # ============================================================================
 #                               CONFIGURATIONS
@@ -22,11 +23,13 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix=["sisyphus ", "Sisyphus ", "Sis ", "sis "], intents=intents)
 
-# File paths
-GAME_DATA_FILE = "game_data.json"
+# MongoDB setup
+mongo_client = AsyncIOMotorClient(mongo_uri)
+db = mongo_client.sisyphus_bot
+servers_collection = db.servers
 
-# Default configurations if file doesn't exist/is corrupted
-config = {"servers":{}}
+# Default configurations
+config = {"servers": {}}
 
 # List of fail messages
 fail_messages = [
@@ -59,10 +62,9 @@ fail_messages = [
     "It takes REAL talent to be this oblivious.",
     "Ladies and gentlemen, in this exhibit we have an example of a Sapien that didn't develop critical thinking.",
     "I hope you step in a puddle with socks on.",
-    "I hope you wash your hands and get your long sleeves wet."
+    "I hope you wash your hands and get your long sleeves wet.",
     "I hope you get an itch where you can't reach."
 ]
-
 
 # ============================================================================
 #                               HELPER FUNCTIONS
@@ -71,30 +73,18 @@ fail_messages = [
 def get_random_string(string_list):
     return random.choice(string_list)
 
-def load_game_data():
-    global config
-    if os.path.exists(GAME_DATA_FILE):
-        try:
-            with open(GAME_DATA_FILE, "r") as f:
-                config = json.load(f)
-        except json.JSONDecodeError:
-            print(f"Error: Could not decode JSON from {GAME_DATA_FILE}. Using default configuration.")
-            config = {"servers": {}}
-    else:
-        config = {"servers": {}}
+async def get_guild_config(guild_id: str):
+    guild_config = await servers_collection.find_one({"_id": guild_id})
+    if not guild_config:
+        guild_config = {"_id": guild_id}
+    return guild_config
 
-    # Ensure each server has a banned_users list
-    for guild_id in config["servers"]:
-        config["servers"][guild_id].setdefault("banned_users", [])
-
-
-def save_game_data():
-    with open(GAME_DATA_FILE, "w") as f:
-        json.dump(config, f, indent=4)
-
-# --- Number Parsing Safety ---
-class TimeoutException(Exception):
-    pass
+async def save_guild_config(guild_id: str, guild_config: dict):
+    await servers_collection.replace_one(
+        {"_id": guild_id},
+        guild_config,
+        upsert=True
+    )
 
 def timeout_handler(signum, frame):
     raise TimeoutException("Calculation timed out")
@@ -127,41 +117,26 @@ def safe_numexpr_eval(expression, timeout=1):
         return result.item()
 
     except (TypeError, ZeroDivisionError, NameError, SyntaxError) as e:
-
         print(f"Error evaluating expression: {e}")
         return None
     except TimeoutException:
-
         print("Calculation timed out!")
         return None
     finally:
         signal.alarm(0)
 
-# ============================================================================
-#                               PERMISSION CHECKING
-# ============================================================================
-
-def is_owner(ctx):
-    return ctx.author.id == ctx.guild.owner_id or str(ctx.author.id) == "516674441053470759"
-
-def is_operator(ctx) -> bool:
+async def is_operator(ctx) -> bool:
     guild_id = str(ctx.guild.id)
-    guild_config = config["servers"].get(guild_id, {}) # Get the guild config, or an empty dict if not found
-
+    guild_config = await get_guild_config(guild_id)
     operators = guild_config.get("operators", [])
-
     return str(ctx.author.id) == "516674441053470759" or str(ctx.author.id) in operators or ctx.author.id == ctx.guild.owner_id
 
-def is_admin(ctx) -> bool:
+async def is_admin(ctx) -> bool:
     guild_id = str(ctx.guild.id)
-    guild_config = config["servers"].get(guild_id, {}) # Get the guild config, or an empty dict if not found
-
+    guild_config = await get_guild_config(guild_id)
     admins = guild_config.get("admins", [])
-
     operators = guild_config.get("operators", [])
-
     return str(ctx.author.id) in admins or str(ctx.author.id) in operators or str(ctx.author.id) == "516674441053470759" or ctx.author.id == ctx.guild.owner_id
-
 
 # ============================================================================
 #                               BOT EVENTS
@@ -170,7 +145,6 @@ def is_admin(ctx) -> bool:
 @bot.event
 async def on_ready():
     print(f"Bot is online as {bot.user}")
-    load_game_data()
 
 # --- Message Counting Logic ---
 state_lock = asyncio.Lock()
@@ -181,7 +155,7 @@ async def on_message(message):
         return
 
     guild_id = str(message.guild.id)
-    guild_config = config["servers"].get(guild_id)
+    guild_config = await get_guild_config(guild_id)
 
     if not guild_config or message.channel.id != guild_config.get("channel_id"):
         return
@@ -201,7 +175,6 @@ async def on_message(message):
             else:
                 number = safe_numexpr_eval(expression)
 
-
             if isinstance(number, (int, float)):
                 # Check if user is banned
                 banned_users = guild_config.get("banned_users", [])
@@ -214,8 +187,8 @@ async def on_message(message):
                             f"{message.author.mention} {get_random_string(fail_messages)} **You can't count twice in a row. Now you have to restart from 1.**"
                         )
                         await message.add_reaction("❌")
-                        config["servers"][guild_id]["expected_number"] = 1
-                        config["servers"][guild_id]["last_user_name"] = None
+                        guild_config["expected_number"] = 1
+                        guild_config["last_user_name"] = None
                     else:
                         username = message.author.name
                         if "scores" not in guild_config:
@@ -242,22 +215,21 @@ async def on_message(message):
                             guild_config["record_number"] = number
                             guild_config["record_holder"] = message.author.name
 
-                        config["servers"][guild_id]["expected_number"] += 1
-                        config["servers"][guild_id]["last_user_name"] = message.author.name
+                        guild_config["expected_number"] = expected_number + 1
+                        guild_config["last_user_name"] = message.author.name
 
                 else:
                     await message.reply(
                         f"{message.author.mention} {get_random_string(fail_messages)} You ruined it at **{expected_number}**. **Now you have to restart from 1.**"
                     )
                     await message.add_reaction("❌")
-                    config["servers"][guild_id]["expected_number"] = 1
-                    config["servers"][guild_id]["last_user_name"] = None
+                    guild_config["expected_number"] = 1
+                    guild_config["last_user_name"] = None
 
-                save_game_data()
+                await save_guild_config(guild_id, guild_config)
 
         except (ValueError, SyntaxError):
             pass
-
 
 # ============================================================================
 #                               BOT COMMANDS
@@ -266,29 +238,25 @@ async def on_message(message):
 @bot.command(name="set_channel")
 async def set_channel(ctx):
     guild_id = str(ctx.guild.id)
-
-    if "servers" not in config:
-        config["servers"] = {}
-
-    config["servers"][guild_id] = {
-        "channel_id": ctx.channel.id,
-        "expected_number": 1,
-        "last_user": None,
-    }
-    save_game_data()
-
+    guild_config = await get_guild_config(guild_id)
+    
+    guild_config["channel_id"] = ctx.channel.id
+    guild_config["expected_number"] = 1
+    guild_config["last_user"] = None
+    
+    await save_guild_config(guild_id, guild_config)
     await ctx.send(f"Counting game channel has been set to {ctx.channel.mention}.")
 
 @bot.command(name="leaderboard", aliases=["leader", "l"])
 async def leaderboard(ctx):
     guild_id = str(ctx.guild.id)
+    guild_config = await get_guild_config(guild_id)
 
-    if guild_id not in config["servers"] or "scores" not in config["servers"][guild_id]:
+    if "scores" not in guild_config:
         await ctx.reply("Nobody's even started counting yet, wym?")
         return
 
-    scores = config["servers"][guild_id]["scores"]
-
+    scores = guild_config["scores"]
     sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:10]
 
     embed = discord.Embed(
@@ -309,12 +277,13 @@ async def leaderboard(ctx):
 @bot.command(name="next", aliases=["number", "num", "n"])
 async def next(ctx):
     guild_id = str(ctx.guild.id)
+    guild_config = await get_guild_config(guild_id)
 
-    if guild_id not in config["servers"]:
+    if "channel_id" not in guild_config:
         await ctx.reply("This server is not set up for counting yet.")
         return
 
-    await ctx.reply(f"The next number is **{config["servers"][guild_id]["expected_number"]}**.")
+    await ctx.reply(f"The next number is **{guild_config['expected_number']}**.")
 
 @bot.command(name="commands")
 async def help_command(ctx):
@@ -407,34 +376,28 @@ async def help_command(ctx):
 @bot.command(name="record", aliases=["r"])
 async def record(ctx):
     guild_id = str(ctx.guild.id)
+    guild_config = await get_guild_config(guild_id)
 
-    if guild_id not in config["servers"]:
-        await ctx.reply("This server is not set up for counting yet.")
-        return
-
-    record_number = config["servers"][guild_id].get("record_number", 1)
-    record_holder = config["servers"][guild_id].get("record_holder", "No one yet")
+    record_number = guild_config.get("record_number", 1)
+    record_holder = guild_config.get("record_holder", "No one yet")
 
     await ctx.reply(f"The current record number is **{record_number}** set by **{record_holder}**.")
-
 
 # ============================================================================
 #                               ADMIN COMMANDS
 # ============================================================================
+
 @bot.command(name="setnum")
 async def setnum(ctx, new_number: int):
-    if not is_admin(ctx):
+    if not await is_admin(ctx):
         await ctx.reply("Lol sike u thought :nerd:")
         return
 
     guild_id = str(ctx.guild.id)
-
-    if guild_id not in config["servers"]:
-        await ctx.reply("This server is not set up for counting yet.")
-        return
-
-    config["servers"][guild_id]["expected_number"] = new_number
-    save_game_data()
+    guild_config = await get_guild_config(guild_id)
+    
+    guild_config["expected_number"] = new_number
+    await save_guild_config(guild_id, guild_config)
 
     await ctx.reply(f"As you wish, my glorious king. I have set the number to **{new_number}**.")
 
@@ -444,20 +407,21 @@ async def setadmin(ctx, new_admin: discord.Member = None):
         await ctx.reply("...are you gonna tell me who? `sis setadmin @username`")
         return
 
-    if not is_admin(ctx):
+    if not await is_admin(ctx):
         await ctx.reply("Bro who are you? :sob:")
         return
 
     guild_id = str(ctx.guild.id)
-    config["servers"].setdefault(guild_id, {"admins": [], "operators": []})
-    admins = config["servers"][guild_id].setdefault("admins", [])
+    guild_config = await get_guild_config(guild_id)
+    
+    admins = guild_config.setdefault("admins", [])
 
     if str(new_admin.id) in admins:
         await ctx.reply(f"Lock in bruh ... {new_admin.mention} has already been granted admin. :man_facepalming: ")
         return
 
     admins.append(str(new_admin.id))
-    save_game_data()
+    await save_guild_config(guild_id, guild_config)
     await ctx.reply(f"A new torch has been lit. Welcome to the elites, {new_admin.mention}. :palm_up_hand: :candle:")
 
 @bot.command(name="setoperator")
@@ -466,20 +430,21 @@ async def setoperator(ctx, new_operator: discord.Member = None):
         await ctx.reply("...are you gonna tell me who? `sis setoperator @username`")
         return
 
-    if not is_operator(ctx):
+    if not await is_operator(ctx):
         await ctx.reply("Bro who are you? :sob:")
         return
 
     guild_id = str(ctx.guild.id)
-    config["servers"].setdefault(guild_id, {"admins": [], "operators": []})
-    operators = config["servers"][guild_id].setdefault("operators", [])
+    guild_config = await get_guild_config(guild_id)
+    
+    operators = guild_config.setdefault("operators", [])
 
     if str(new_operator.id) in operators:
         await ctx.reply(f"Lock in bruh ... {new_operator.mention} has already been granted operator. :man_facepalming: ")
         return
 
     operators.append(str(new_operator.id))
-    save_game_data()
+    await save_guild_config(guild_id, guild_config)
     await ctx.reply(f"A new torch has been lit. Welcome to the elites, {new_operator.mention}. :palm_up_hand: :candle:")
 
 @bot.command(name="removeadmin")
@@ -488,14 +453,15 @@ async def removeadmin(ctx, remove_admin_id: int = None):
         await ctx.reply("...Are you gonna tell me who? :sob: `sis removeadmin user_id`")
         return
 
-    if not is_admin(ctx):
+    if not await is_admin(ctx):
         await ctx.reply("Bro who are you? :sob:")
         return
 
     guild_id = str(ctx.guild.id)
-    config["servers"].setdefault(guild_id, {"admins": [], "operators": []})
-    operators = config["servers"][guild_id].setdefault("operators", [])
-    admins = config["servers"][guild_id].setdefault("admins", [])
+    guild_config = await get_guild_config(guild_id)
+    
+    operators = guild_config.setdefault("operators", [])
+    admins = guild_config.setdefault("admins", [])
     remove_admin_id = str(remove_admin_id)
 
     if remove_admin_id not in admins:
@@ -505,7 +471,7 @@ async def removeadmin(ctx, remove_admin_id: int = None):
     admins.remove(remove_admin_id)
     if remove_admin_id in operators:
         operators.remove(remove_admin_id)
-    save_game_data()
+    await save_guild_config(guild_id, guild_config)
 
     try:
         user = await bot.fetch_user(int(remove_admin_id))
@@ -521,14 +487,15 @@ async def removeoperator(ctx, remove_operator_id: int = None):
         await ctx.reply("...Are you gonna tell me who? `sis removeoperator user_id`")
         return
 
-    if not is_owner(ctx):
+    if not await is_operator(ctx):
         await ctx.reply("Bro who are you? :sob:")
         return
 
     guild_id = str(ctx.guild.id)
-    config["servers"].setdefault(guild_id, {"admins": [], "operators": []})
-    operators = config["servers"][guild_id].setdefault("operators", [])
-    admins = config["servers"][guild_id].setdefault("admins", [])
+    guild_config = await get_guild_config(guild_id)
+    
+    operators = guild_config.setdefault("operators", [])
+    admins = guild_config.setdefault("admins", [])
     remove_operator_id = str(remove_operator_id)
 
     if remove_operator_id not in operators:
@@ -538,7 +505,7 @@ async def removeoperator(ctx, remove_operator_id: int = None):
     operators.remove(remove_operator_id)
     if remove_operator_id in admins:
         admins.remove(remove_operator_id)
-    save_game_data()
+    await save_guild_config(guild_id, guild_config)
 
     try:
         user = await bot.fetch_user(int(remove_operator_id))
@@ -550,7 +517,7 @@ async def removeoperator(ctx, remove_operator_id: int = None):
     
 @bot.command(name="ban")
 async def ban(ctx, member: discord.Member = None):
-    if not is_admin(ctx) and not is_operator(ctx):
+    if not await is_admin(ctx) and not await is_operator(ctx):
         await ctx.reply("Bro who are you? :sob:")
         return
 
@@ -559,20 +526,21 @@ async def ban(ctx, member: discord.Member = None):
         return
 
     guild_id = str(ctx.guild.id)
-    config["servers"].setdefault(guild_id, {})
-    banned_users = config["servers"][guild_id].setdefault("banned_users", [])
+    guild_config = await get_guild_config(guild_id)
+    
+    banned_users = guild_config.setdefault("banned_users", [])
 
     if str(member.id) in banned_users:
         await ctx.reply(f"Lock in bruh ... {member.mention} is already banned. :man_facepalming:")
         return
 
     banned_users.append(str(member.id))
-    save_game_data()
+    await save_guild_config(guild_id, guild_config)
     await ctx.reply(f"No more counting for {member.mention}... #L #Bozo #Ratio :no_entry_sign:")
     
 @bot.command(name="unban")
 async def unban(ctx, member: discord.Member = None):
-    if not is_admin(ctx) and not is_operator(ctx):
+    if not await is_admin(ctx) and not await is_operator(ctx):
         await ctx.reply("Bro who are you? :sob:")
         return
 
@@ -581,22 +549,20 @@ async def unban(ctx, member: discord.Member = None):
         return
 
     guild_id = str(ctx.guild.id)
-    config["servers"].setdefault(guild_id, {})
-    banned_users = config["servers"][guild_id].setdefault("banned_users", [])
+    guild_config = await get_guild_config(guild_id)
+    
+    banned_users = guild_config.setdefault("banned_users", [])
 
     if str(member.id) not in banned_users:
         await ctx.reply(f"Nah. {member.mention} ain't even banned bozo.")
         return
 
     banned_users.remove(str(member.id))
-    save_game_data()
+    await save_guild_config(guild_id, guild_config)
     await ctx.reply(f"Alright I'll let {member.mention} count... DON'T test my patience though... :white_check_mark:")
-
 
 # ============================================================================
 #                               BOT STARTUP
 # ============================================================================
 
-bot.run(
-   bot_token
-)
+bot.run(bot_token)
