@@ -8,6 +8,7 @@ import numexpr
 import re
 import signal
 from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo.read_concern import ReadConcern
 
 dotenv.load_dotenv()
 bot_token = os.getenv("BOT_TOKEN")
@@ -26,7 +27,7 @@ bot = commands.Bot(command_prefix=["sisyphus ", "Sisyphus ", "Sis ", "sis "], in
 # MongoDB setup
 mongo_client = AsyncIOMotorClient(mongo_uri)
 db = mongo_client.sisyphus_bot
-servers_collection = db.servers
+servers_collection = db.get_collection("servers", read_concern=ReadConcern("majority"))
 
 # Default configurations
 config = {"servers": {}}
