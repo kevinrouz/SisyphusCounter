@@ -80,11 +80,17 @@ async def get_guild_config(guild_id: str):
     return guild_config
 
 async def save_guild_config(guild_id: str, guild_config: dict):
-    await servers_collection.replace_one(
+    # Wait for the operation to complete and get the result
+    result = await servers_collection.replace_one(
         {"_id": guild_id},
         guild_config,
         upsert=True
     )
+    
+    if not result.acknowledged:
+        print(f"Warning: Database update for guild {guild_id} was not acknowledged")
+    
+    return result
 
 def timeout_handler(signum, frame):
     raise TimeoutException("Calculation timed out")
@@ -161,6 +167,11 @@ async def on_message(message):
         return
 
     async with state_lock:
+        
+        guild_config = await get_guild_config(guild_id)
+        if not guild_config or message.channel.id != guild_config.get("channel_id"):
+            return
+        
         expected_number = guild_config.get("expected_number", 1)
         last_user_name = guild_config.get("last_user_name", None)
         record_number = guild_config.get("record_number", 1)
