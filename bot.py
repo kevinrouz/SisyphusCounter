@@ -99,15 +99,15 @@ def timeout_handler(signum, frame):
 def safe_numexpr_eval(expression, timeout=1):
     """
     Safely evaluates a simple arithmetic expression using numexpr,
-    with strict input sanitization (no parentheses or decimals) and a timeout
+    with strict input sanitization (allows parentheses but no decimals) and a timeout
     to prevent denial-of-service.
     """
     # Replace every ^ with **
     expression = expression.replace("^", "**")
     
-    # Sanitize input using a regular expression to allow only digits,
-    # basic arithmetic operators (+, -, *, /, **), and spaces
-    if not re.match(r"^[\d+\-*/\s]+$", expression):
+    # Sanitize input using a regular expression to allow digits, basic arithmetic operators,
+    # parentheses, and spaces
+    if not re.match(r"^[\d+\-*/\s()]+$", expression):
         return None
 
     try:
@@ -295,7 +295,7 @@ async def next(ctx):
         await ctx.reply("This server is not set up for counting yet.")
         return
 
-    await ctx.reply(f"The next number is **{guild_config['expected_number']}**.")
+    await ctx.reply(f"The next number is **{guild_config['expected_number']}**. Last number was counted by **{guild_config['last_user_name']}**.")
 
 @bot.command(name="commands")
 async def help_command(ctx):
