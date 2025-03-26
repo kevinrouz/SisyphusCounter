@@ -84,7 +84,7 @@ This is a simple Discord bot designed to run a counting game in your server. Thi
 
 ## Setup
 
-If you'd like to run yoru own version of the bot,
+If you'd like to run your own version of the bot,
 
 1. Create a `.env` file with the following variables:
    - `BOT_TOKEN`: Your Discord bot token
