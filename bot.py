@@ -181,7 +181,11 @@ async def on_message(message):
             parts = message.content.split(' ', 1)
             expression = parts[0]
             expression = expression.lstrip('0')
-            
+            # Remove zero-width spaces and other invisible characters
+            expression = re.sub(r'[\u200B-\u200E\uFEFF]', '', expression)
+            # Remove markdown bold formatting
+            expression = expression.replace('**', '')
+        
             if not expression:
                 number = 0
             else:
@@ -295,7 +299,7 @@ async def next(ctx):
         await ctx.reply("This server is not set up for counting yet.")
         return
 
-    await ctx.reply(f"The next number is **{guild_config['expected_number']}**. Last number was counted by **{guild_config['last_user_name']}**.")
+    await ctx.reply(f"The next number is **{guild_config['expected_number']}**.")
 
 @bot.command(name="commands")
 async def help_command(ctx):
