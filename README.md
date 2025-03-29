@@ -98,5 +98,16 @@ If you'd like to run your own version of the bot,
 
 3. Run the bot using `python bot.py`
 
+**Or, invite the original Sisyphus into your server!**
+
+Simply invite the bot by using this link:
+
+
+https://discord.com/oauth2/authorize?client_id=1318377018160844861&permissions=268435456&scope=bot
+
+and set the game channel with `sis set_channel`
+
+Happy Counting!
+
 ## Created by Kevin Farokhrouz :bat:
 Feel free to reach out if you have any questions!
