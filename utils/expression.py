@@ -24,14 +24,14 @@ def safe_numexpr_eval(expression, timeout=1):
 
     try:
         # Set up a timeout handler to prevent long calculations
-        # signal.signal(signal.SIGALRM, timeout_handler)
-        # signal.alarm(timeout)
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(timeout)
 
         # Evaluate the expression using numexpr.evaluate()
         result = numexpr.evaluate(expression)
 
         # Clear the alarm after a successful result
-        # signal.alarm(0)
+        signal.alarm(0)
 
         return result.item()
 
@@ -41,6 +41,8 @@ def safe_numexpr_eval(expression, timeout=1):
     except TimeoutException:
         print("Calculation timed out!")
         return None
+    except OverflowError:
+        print("Number too big, overflowed!")
+        return None
     finally:
-        pass
-        # signal.alarm(0) 
+        signal.alarm(0) 
