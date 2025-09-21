@@ -55,6 +55,9 @@ async def handle_message(message, bot):
     if not guild_config or message.channel.id != guild_config.get("channel_id"):
         return
 
+    if message.attachments or message.embeds:
+        return
+
     async with state_lock:
         guild_config = await get_guild_config(guild_id)
         if not guild_config or message.channel.id != guild_config.get("channel_id"):
