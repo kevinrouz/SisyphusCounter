@@ -116,6 +116,8 @@ async def handle_message(message, bot):
                                     message.add_reaction("🇨"),
                                     message.add_reaction("🇪")
                                 )
+                            elif str(number).endswith("67"):
+                                await message.add_reaction("🤷‍♂️")
 
                         if number > record_number:
                             guild_config["record_number"] = number
